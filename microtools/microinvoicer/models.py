@@ -8,7 +8,6 @@ from django.utils.translation import ugettext_lazy as _
 from django.utils import timezone
 
 from .managers import MicroUserManager
-
 from . import micro_use_cases as muc
 
 class MicroUser(AbstractBaseUser, PermissionsMixin):
@@ -25,7 +24,8 @@ class MicroUser(AbstractBaseUser, PermissionsMixin):
     is_staff = models.BooleanField(_('staff status'), default=False)
     is_active = models.BooleanField(_('active'), default=True)
     date_joined = models.DateTimeField(_('date joined'), default=timezone.now)
-    datastore = models.TextField(blank=True)
+    datastore = models.TextField(blank=True, default='')
+    crc = models.CharField(_('crc32'), max_length=10, blank=False, default='0x0')
 
     objects = MicroUserManager()
 
@@ -49,9 +49,23 @@ class MicroUser(AbstractBaseUser, PermissionsMixin):
     def write_data(self, db):
         # TODO: add some validation / exception handling
         self.datastore = muc.dumps(db)
+        self.crc = muc.to_crc32(self.datastore)
         self.save()
 
     def read_data(self):
         # TODO: add some validation / exception handling
-        return muc.loads(str(self.datastore))
+        crc = muc.to_crc32(self.datastore)
+
+        if crc != self.crc:
+            print('\t >> [warning] crc check failed. did someone messed with your data?')
+            print(f'{self.datastore!r}')
+            print(f'computed _{crc}_ vs _{self.crc}_ stored')
+
+            self.datastore = ''
+            self.crc = muc.to_crc32(self.datastore)
+            self.save()
+
+        db = muc.loads(self.datastore)
+
+        return db
 
